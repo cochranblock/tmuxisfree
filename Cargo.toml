@@ -1,0 +1,38 @@
+# Unlicense — cochranblock.org
+# Contributors: GotEmCoach, KOVA, Claude Opus 4.6
+
+[package]
+name = "tmuxisfree"
+version = "0.1.0"
+edition = "2024"
+description = "Free AI orchestration via tmux + Claude Code. LangChain replacement. Zero Python. Zero cloud. Each pane is a siloed AI agent working on a project directory."
+license = "Unlicense"
+repository = "https://github.com/cochranblock/tmuxisfree"
+keywords = ["tmux", "ai-orchestration", "langchain-alternative", "claude", "multi-agent"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[features]
+default = []
+tests = ["exopack"]
+
+[dependencies.exopack]
+path = "../exopack"
+optional = true
+features = ["triple_sims"]
+
+[[bin]]
+name = "tmuxisfree"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
