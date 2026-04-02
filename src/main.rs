@@ -146,6 +146,17 @@ fn has_permission_prompt(session: &str, window: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// f8: Check if pane has plan approval prompt (needs '1' not just Enter)
+fn has_plan_prompt(session: &str, window: &str) -> bool {
+    capture_pane(session, window, 10)
+        .map(|s| {
+            s.contains("Would you like to proceed")
+                || s.contains("Yes, auto-accept edits")
+                || s.contains("Yes, and don")
+        })
+        .unwrap_or(false)
+}
+
 mod init {
     use super::*;
     /// f0: Initialize fleet from config
@@ -307,7 +318,10 @@ mod unblock {
             let windows = tmux(&["list-windows", "-t", session, "-F", "#{window_index}"])?;
             for idx in windows.lines() {
                 if idx == "0" { continue; }
-                if has_permission_prompt(session, idx) {
+                if has_plan_prompt(session, idx) {
+                    send_keys(session, idx, "1")?;
+                    eprintln!("[w{}] approved plan prompt", idx);
+                } else if has_permission_prompt(session, idx) {
                     send_keys(session, idx, "")?;
                     eprintln!("[w{}] unblocked permission", idx);
                 }
