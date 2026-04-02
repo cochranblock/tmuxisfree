@@ -158,7 +158,6 @@ fn has_plan_prompt(session: &str, window: &str) -> bool {
 }
 
 mod init {
-    use super::*;
     /// f0: Initialize fleet from config
     pub fn f0(_session: &str, _config: &str) -> anyhow::Result<()> {
         println!("init: not yet implemented");
