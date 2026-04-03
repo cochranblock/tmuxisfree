@@ -310,19 +310,61 @@ mod peek {
 
 mod unblock {
     use super::*;
-    /// f60: Unblock daemon
+    /// f60: Unblock daemon — self-kills older instances, tracks cooldowns
     pub fn f60(session: &str, interval: u64) -> anyhow::Result<()> {
-        eprintln!("unblock daemon running ({}s interval)", interval);
+        use std::collections::HashMap;
+        use std::time::Instant;
+
+        // Kill any existing unblock daemon before starting
+        let my_pid = std::process::id();
+        if let Ok(out) = Command::new("pgrep").args(["-f", "tmuxisfree unblock"]).output() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if let Ok(pid) = line.trim().parse::<u32>() {
+                    if pid != my_pid {
+                        let _ = Command::new("kill").arg(pid.to_string()).status();
+                        eprintln!("[unblock] killed old instance pid={}", pid);
+                    }
+                }
+            }
+        }
+        eprintln!("unblock daemon running ({}s interval, pid={})", interval, my_pid);
+
+        // Cooldown: don't re-approve same window within 30s
+        let mut cooldowns: HashMap<String, Instant> = HashMap::new();
+        let cooldown_secs = 30;
+
         loop {
             let windows = tmux(&["list-windows", "-t", session, "-F", "#{window_index}"])?;
             for idx in windows.lines() {
                 if idx == "0" { continue; }
+                let now = Instant::now();
+
                 if has_plan_prompt(session, idx) {
-                    send_keys(session, idx, "1")?;
-                    eprintln!("[w{}] approved plan prompt", idx);
+                    if let Some(last) = cooldowns.get(idx) {
+                        if now.duration_since(*last).as_secs() < cooldown_secs {
+                            continue; // still cooling down
+                        }
+                    }
+                    let target = format!("{}:{}", session, idx);
+                    let _ = Command::new("tmux").args(["send-keys", "-t", &target, "1"]).status();
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    let _ = Command::new("tmux").args(["send-keys", "-t", &target, "Enter"]).status();
+                    cooldowns.insert(idx.to_string(), now);
+                    eprintln!("[w{}] approved plan prompt (cooldown 30s)", idx);
                 } else if has_permission_prompt(session, idx) {
                     send_keys(session, idx, "")?;
                     eprintln!("[w{}] unblocked permission", idx);
+                }
+                if is_rate_limited(session, idx) {
+                    if let Some(last) = cooldowns.get(&format!("rl_{}", idx)) {
+                        if now.duration_since(*last).as_secs() < 60 {
+                            continue; // back off 60s on rate limits
+                        }
+                    }
+                    // Hit Enter to retry the last message
+                    send_keys(session, idx, "")?;
+                    cooldowns.insert(format!("rl_{}", idx), now);
+                    eprintln!("[w{}] rate limited — retry (cooldown 60s)", idx);
                 }
                 if has_pasted_text(session, idx) {
                     send_keys(session, idx, "")?;
