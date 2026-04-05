@@ -4,6 +4,8 @@
 
 AI fleet orchestration via tmux + Claude Code. Each pane is a siloed AI agent working on a project directory. Zero Python. Zero cloud. Zero dependencies beyond tmux and claude.
 
+Part of the [CochranBlock](https://cochranblock.org) ecosystem — veteran-owned, zero-cloud infrastructure.
+
 ## What it does
 
 You have 15 projects. You open 15 tmux panes. Each pane runs `claude` in a project directory. tmuxisfree dispatches tasks, monitors progress, retries on rate limits, approves permission prompts, and reports status. That's it.
@@ -85,6 +87,23 @@ dir = "~/kova"
 | Cost | API tokens per call | Claude subscription (flat rate) |
 | Setup | pip install, .env, chains, prompts | tmux + claude |
 
+## Part of the CochranBlock ecosystem
+
+tmuxisfree is one piece of a zero-cloud stack built entirely in Rust:
+
+- **[kova](https://github.com/cochranblock/kova)** — Augment engine. Local AI, distributed C2, tokenized commands.
+- **[approuter](https://github.com/cochranblock/approuter)** — Reverse proxy + Cloudflare tunnel manager. One binary replaces nginx + certbot + cloudflared.
+- **[pixel-forge](https://github.com/cochranblock/pixel-forge)** — AI pixel art generator. Deterministic sprites from text prompts.
+- **[cochranblock](https://github.com/cochranblock/cochranblock)** — The company site. 15MB binary serves everything. [$10/month total infrastructure](https://cochranblock.org/openbooks).
+
+**Need a fractional CTO who ships?** [cochranblock.org/deploy](https://cochranblock.org/deploy)
+
+## Live stats
+
+- [Velocity dashboard](https://cochranblock.org/codeskillz) — commit activity across all repos
+- [Traffic analytics](https://cochranblock.org/barz) — live Cloudflare + git data
+- [Open books](https://cochranblock.org/openbooks) — real costs, public
+
 ## License
 
-Unlicense — public domain. cochranblock.org
+Unlicense — public domain. [cochranblock.org](https://cochranblock.org)
