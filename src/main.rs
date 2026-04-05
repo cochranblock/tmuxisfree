@@ -79,6 +79,31 @@ enum Cmd {
         #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
         session: String,
     },
+    /// Switch to mobile mode — compact status, bottom bar, hide idle windows
+    Mobile {
+        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        session: String,
+    },
+    /// Switch to desktop mode — full status bar, top position
+    Desktop {
+        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        session: String,
+    },
+    /// Focus a project window, hide all others. Auto-return to C2 when command finishes.
+    Focus {
+        /// Window name or index
+        window: String,
+        /// Optional command to run (auto-returns to C2 on completion)
+        #[arg(short, long)]
+        cmd: Option<String>,
+        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        session: String,
+    },
+    /// Return to C2 and minimize all project windows
+    Home {
+        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        session: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -93,6 +118,10 @@ fn main() -> anyhow::Result<()> {
         Cmd::Unblock { session, interval } => unblock::f60(&session, interval),
         Cmd::Qa { session } => qa::f70(&session),
         Cmd::Layout { session } => layout::f80(&session),
+        Cmd::Mobile { session } => mode::f90(&session),
+        Cmd::Desktop { session } => mode::f91(&session),
+        Cmd::Focus { window, cmd, session } => focus::f100(&session, &window, cmd.as_deref()),
+        Cmd::Home { session } => focus::f101(&session),
     }
 }
 
@@ -397,6 +426,88 @@ mod layout {
                 println!("| {} | {} | {} |", parts[0], parts[1], parts[2]);
             }
         }
+        Ok(())
+    }
+}
+
+mod mode {
+    use super::*;
+
+    /// f90: Mobile mode — fat-finger friendly, compact, bottom bar
+    pub fn f90(session: &str) -> anyhow::Result<()> {
+        let cmds: &[&[&str]] = &[
+            // Status bar to bottom (thumb reachable)
+            &["set", "-t", session, "-g", "status-position", "bottom"],
+            // Double-height status bar (bigger tap targets)
+            &["set", "-t", session, "-g", "status", "2"],
+            // Compact left — just emoji + short label
+            &["set", "-t", session, "-g", "status-left", "#[fg=#00d4aa,bold] 🚀 K "],
+            // Compact right
+            &["set", "-t", session, "-g", "status-right", "#[fg=#d4a017] %H:%M "],
+            // Wider tab format for tap targets
+            &["set", "-t", session, "-g", "window-status-format", "#[fg=#6b2fa0,bg=#0a0a0a]  #W  "],
+            &["set", "-t", session, "-g", "window-status-current-format", "#[fg=#0a0a0a,bg=#00d4aa,bold]  #W  "],
+            // Hide idle windows — only show C2 + windows with activity
+            &["set", "-t", session, "-g", "window-status-format",
+              "#{?window_activity_flag,#[fg=#d4a017,bg=#0a0a0a]  #W  ,#{?#{==:#I,0},#[fg=#6b2fa0,bg=#0a0a0a]  #W  ,}}"],
+            // Tag mobile mode
+            &["set", "-t", session, "-g", "@mobile", "on"],
+        ];
+        for args in cmds {
+            let _ = Command::new("tmux").args(*args).status();
+        }
+        eprintln!("mobile mode — bottom bar, compact tabs, idle windows hidden");
+        Ok(())
+    }
+
+    /// f91: Desktop mode — full status bar, top position, all windows visible
+    pub fn f91(session: &str) -> anyhow::Result<()> {
+        let cmds: &[&[&str]] = &[
+            &["set", "-t", session, "-g", "status-position", "top"],
+            &["set", "-t", session, "-g", "status", "1"],
+            &["set", "-t", session, "-g", "status-left", "#[fg=#00d4aa,bold] KOVA "],
+            &["set", "-t", session, "-g", "status-right", "#[fg=#6b2fa0]⬥ #[fg=#d4a017]%H:%M"],
+            &["set", "-t", session, "-g", "window-status-format", "#[fg=#6b2fa0,bg=#0a0a0a] #W "],
+            &["set", "-t", session, "-g", "window-status-current-format", "#[fg=#0a0a0a,bg=#00d4aa,bold] #W "],
+            &["set", "-t", session, "-g", "@mobile", "off"],
+        ];
+        for args in cmds {
+            let _ = Command::new("tmux").args(*args).status();
+        }
+        eprintln!("desktop mode — top bar, all windows visible");
+        Ok(())
+    }
+}
+
+mod focus {
+    use super::*;
+
+    /// f100: Focus a project window. Optional command auto-returns to C2.
+    pub fn f100(session: &str, window: &str, cmd: Option<&str>) -> anyhow::Result<()> {
+        // Select the target window
+        let target = format!("{}:{}", session, window);
+        Command::new("tmux")
+            .args(["select-window", "-t", &target])
+            .status()
+            .map_err(|_| anyhow::anyhow!("window '{}' not found", window))?;
+
+        if let Some(c) = cmd {
+            // Run command, then auto-return to C2
+            let wrapped = format!("{} ; tmux select-window -t {}:0", c, session);
+            send_keys(session, window, &wrapped)?;
+            eprintln!("[{}] dispatched — auto-return to C2 on completion", window);
+        } else {
+            eprintln!("[{}] focused — use `tmuxisfree home` to return", window);
+        }
+        Ok(())
+    }
+
+    /// f101: Return to C2 window
+    pub fn f101(session: &str) -> anyhow::Result<()> {
+        Command::new("tmux")
+            .args(["select-window", "-t", &format!("{}:0", session)])
+            .status()?;
+        eprintln!("home — C2");
         Ok(())
     }
 }
