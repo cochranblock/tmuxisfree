@@ -104,6 +104,40 @@ enum Cmd {
         #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
         session: String,
     },
+    /// Push a task onto a pane's backlog stack
+    Push {
+        /// Window name
+        window: String,
+        /// Task description
+        task: String,
+    },
+    /// Pop the top task from a pane's backlog and dispatch it
+    Pop {
+        /// Window name
+        window: String,
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
+        session: String,
+    },
+    /// Show a pane's backlog stack (top = next)
+    Backlog {
+        /// Window name (omit for all panes)
+        window: Option<String>,
+    },
+    /// Clear a pane's backlog
+    Clear {
+        /// Window name
+        window: String,
+    },
+    /// Drain: pop and dispatch all tasks from a pane's backlog (staggered, waits for idle)
+    Drain {
+        /// Window name
+        window: String,
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
+        session: String,
+        /// Seconds to wait between polling for idle
+        #[arg(short, long, default_value = "10")]
+        interval: u64,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -122,6 +156,11 @@ fn main() -> anyhow::Result<()> {
         Cmd::Desktop { session } => mode::f91(&session),
         Cmd::Focus { window, cmd, session } => focus::f100(&session, &window, cmd.as_deref()),
         Cmd::Home { session } => focus::f101(&session),
+        Cmd::Push { window, task } => backlog::f110(&window, &task),
+        Cmd::Pop { window, session } => backlog::f111(&window, &session),
+        Cmd::Backlog { window } => backlog::f112(window.as_deref()),
+        Cmd::Clear { window } => backlog::f113(&window),
+        Cmd::Drain { window, session, interval } => backlog::f114(&window, &session, interval),
     }
 }
 
@@ -509,5 +548,121 @@ mod focus {
             .status()?;
         eprintln!("home — C2");
         Ok(())
+    }
+}
+
+mod backlog {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn stack_dir() -> PathBuf {
+        let dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".tmuxisfree/backlog");
+        let _ = fs::create_dir_all(&dir);
+        dir
+    }
+
+    fn stack_file(window: &str) -> PathBuf {
+        stack_dir().join(format!("{}.stack", window))
+    }
+
+    fn read_stack(window: &str) -> Vec<String> {
+        fs::read_to_string(stack_file(window))
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect()
+    }
+
+    fn write_stack(window: &str, tasks: &[String]) {
+        let _ = fs::write(stack_file(window), tasks.join("\n"));
+    }
+
+    /// f110: Push task onto pane backlog (top of stack = last line)
+    pub fn f110(window: &str, task: &str) -> anyhow::Result<()> {
+        let mut stack = read_stack(window);
+        stack.push(task.to_string());
+        write_stack(window, &stack);
+        eprintln!("[{}] pushed ({} in backlog)", window, stack.len());
+        Ok(())
+    }
+
+    /// f111: Pop top task and dispatch to pane
+    pub fn f111(window: &str, session: &str) -> anyhow::Result<()> {
+        let mut stack = read_stack(window);
+        if stack.is_empty() {
+            eprintln!("[{}] backlog empty", window);
+            return Ok(());
+        }
+        let task = stack.pop().unwrap();
+        write_stack(window, &stack);
+        eprintln!("[{}] popped: {} ({} remaining)", window, task, stack.len());
+        dispatch::f10(session, window, &task)
+    }
+
+    /// f112: Show backlog (one pane or all)
+    pub fn f112(window: Option<&str>) -> anyhow::Result<()> {
+        if let Some(w) = window {
+            let stack = read_stack(w);
+            if stack.is_empty() {
+                println!("[{}] (empty)", w);
+            } else {
+                println!("[{}] {} tasks:", w, stack.len());
+                for (i, t) in stack.iter().rev().enumerate() {
+                    let marker = if i == 0 { ">" } else { " " };
+                    println!("  {} {}", marker, t);
+                }
+            }
+        } else {
+            let dir = stack_dir();
+            let mut any = false;
+            if let Ok(entries) = fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("stack") {
+                        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+                        let stack = read_stack(name);
+                        if !stack.is_empty() {
+                            any = true;
+                            let top = stack.last().unwrap();
+                            println!("[{}] {} tasks — next: {}", name, stack.len(), top);
+                        }
+                    }
+                }
+            }
+            if !any {
+                println!("all backlogs empty");
+            }
+        }
+        Ok(())
+    }
+
+    /// f113: Clear a pane's backlog
+    pub fn f113(window: &str) -> anyhow::Result<()> {
+        let count = read_stack(window).len();
+        let _ = fs::remove_file(stack_file(window));
+        eprintln!("[{}] cleared {} tasks", window, count);
+        Ok(())
+    }
+
+    /// f114: Drain — pop all tasks, dispatch one at a time, wait for idle between each
+    pub fn f114(window: &str, session: &str, interval: u64) -> anyhow::Result<()> {
+        loop {
+            let stack = read_stack(window);
+            if stack.is_empty() {
+                eprintln!("[{}] backlog drained", window);
+                return Ok(());
+            }
+            // Wait for pane to be idle before popping
+            eprintln!("[{}] waiting for idle ({} remaining)...", window, stack.len());
+            loop {
+                if is_idle(session, window) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(interval));
+            }
+            f111(window, session)?;
+        }
     }
 }
