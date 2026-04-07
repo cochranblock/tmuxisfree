@@ -36,21 +36,21 @@ enum Cmd {
         /// The task message
         message: String,
         /// Seconds between each pane
-        #[arg(short, long, default_value = "5")]
+        #[arg(short = 'g', long, default_value = "5")]
         stagger: u64,
         /// Session name
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Sponge mesh broadcast — skip rate-limited panes, retry with backoff
     Sponge {
         message: String,
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Show fleet status — which panes are working, idle, or stuck
     Status {
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Peek at a pane's recent output
@@ -58,35 +58,35 @@ enum Cmd {
         window: String,
         #[arg(short, long, default_value = "20")]
         lines: usize,
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Start the unblock daemon — auto-approves permission prompts + flushes pasted text
     Unblock {
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
         /// Poll interval in seconds
-        #[arg(short, long, default_value = "3")]
+        #[arg(short = 'i', long, default_value = "3")]
         interval: u64,
     },
     /// QA sweep — send compile + test + clippy to all panes
     Qa {
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Export fleet layout as markdown
     Layout {
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Switch to mobile mode — compact status, bottom bar, hide idle windows
     Mobile {
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Switch to desktop mode — full status bar, top position
     Desktop {
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Focus a project window, hide all others. Auto-return to C2 when command finishes.
@@ -96,12 +96,12 @@ enum Cmd {
         /// Optional command to run (auto-returns to C2 on completion)
         #[arg(short, long)]
         cmd: Option<String>,
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Return to C2 and minimize all project windows
     Home {
-        #[arg(short = 'S', long, default_value = DEFAULT_SESSION)]
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
     },
     /// Push a task onto a pane's backlog stack
@@ -135,7 +135,7 @@ enum Cmd {
         #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
         /// Seconds to wait between polling for idle
-        #[arg(short, long, default_value = "10")]
+        #[arg(short = 'i', long, default_value = "10")]
         interval: u64,
     },
 }
