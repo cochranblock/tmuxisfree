@@ -10,24 +10,24 @@ Part of the [CochranBlock](https://cochranblock.org) ecosystem — veteran-owned
 
 You have 15 projects. You open 15 tmux panes. Each pane runs `claude` in a project directory. tmuxisfree dispatches tasks, monitors progress, retries on rate limits, approves permission prompts, and reports status. That's it.
 
-No LangChain. No Python. No vector databases. No prompt chains. No API wrappers. Just tmux + claude + a 300 KB Rust binary.
+No LangChain. No Python. No vector databases. No prompt chains. No API wrappers. Just tmux + claude + a ~500 KB Rust binary.
 
 ## Install
 
-```
-cargo install tmuxisfree
+```bash
+# From source (not yet on crates.io)
+git clone https://github.com/cochranblock/tmuxisfree
+cd tmuxisfree
+cargo install --path .
 ```
 
 ## Usage
 
 ```bash
-# Initialize a fleet
-tmuxisfree init --config fleet.toml
-
-# Dispatch a task to one pane
+# Dispatch a task to one pane (retry + backoff)
 tmuxisfree dispatch pixel-forge "fix the build error"
 
-# Broadcast to all panes
+# Broadcast to all panes (staggered)
 tmuxisfree broadcast "update docs and push"
 
 # Sponge mesh — handles rate limits automatically
@@ -47,9 +47,29 @@ tmuxisfree qa
 
 # Export fleet layout
 tmuxisfree layout
+
+# Mobile/desktop mode switching
+tmuxisfree mobile    # compact bottom bar, hide idle
+tmuxisfree desktop   # full top bar, all visible
+
+# Focus a window (auto-return to C2 when done)
+tmuxisfree focus cochranblock -c "cargo build"
+tmuxisfree home      # return to C2
+
+# Task backlog (queue work for later)
+tmuxisfree push cochranblock "fix nav CSS"
+tmuxisfree push cochranblock "add dark mode"
+tmuxisfree backlog             # show all backlogs
+tmuxisfree pop cochranblock    # pop top task and dispatch
+tmuxisfree drain cochranblock  # auto-dispatch all, wait for idle between
+tmuxisfree clear cochranblock  # clear backlog
 ```
 
-## Fleet Config (fleet.toml)
+## Fleet Config (planned)
+
+`tmuxisfree init` is not yet implemented. Currently, create your tmux session and windows manually, then use dispatch/broadcast to control them.
+
+Planned config format (fleet.toml):
 
 ```toml
 session = "c2"
@@ -80,7 +100,7 @@ dir = "~/kova"
 | | LangChain | tmuxisfree |
 |---|-----------|------------|
 | Language | Python | Rust |
-| Size | 50+ MB with deps | 300 KB |
+| Size | 50+ MB with deps | ~500 KB |
 | Agents | API wrappers | Full Claude Code instances |
 | Tool access | Limited | Everything (filesystem, git, ssh, cargo) |
 | Isolation | Shared process | Separate tmux panes |
