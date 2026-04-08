@@ -23,7 +23,7 @@ default = []
 tests = ["exopack"]
 
 [dependencies.exopack]
-path = "../exopack"
+git = "https://github.com/cochranblock/exopack"
 optional = true
 features = ["triple_sims"]
 
