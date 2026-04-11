@@ -266,8 +266,12 @@ mod dispatch {
                 continue;
             }
 
-            if has_permission_prompt(session, window) {
-                send_keys(session, window, "")?;
+            if has_approval_prompt(session, window) {
+                let option = pick_option(session, window);
+                let target = format!("{}:{}", session, window);
+                let _ = Command::new("tmux").args(["send-keys", "-t", &target, option]).status();
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let _ = Command::new("tmux").args(["send-keys", "-t", &target, "Enter"]).status();
                 continue;
             }
 
