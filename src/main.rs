@@ -498,7 +498,8 @@ mod peek {
             }
         }
         if let Some((line, n)) = counts.iter().find(|(_, n)| **n >= 3) {
-            eprintln!("[peek] WARNING: chrome filter may be stale — \"{}\" repeated {}x", &line[..line.len().min(40)], n);
+            let preview: String = line.chars().take(40).collect();
+            eprintln!("[peek] WARNING: chrome filter may be stale — \"{}\" repeated {}x", preview, n);
         }
         Ok(())
     }
