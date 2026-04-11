@@ -138,6 +138,21 @@ enum Cmd {
         #[arg(short = 'i', long, default_value = "10")]
         interval: u64,
     },
+    /// Scaffold a fleet.toml by scanning for git repos in a directory
+    Scaffold {
+        /// Directory to scan for git projects
+        #[arg(short, long, default_value = "~")]
+        dir: String,
+        /// Output file
+        #[arg(short, long, default_value = "fleet.toml")]
+        output: String,
+        /// Session name to embed in config
+        #[arg(short, long, default_value = DEFAULT_SESSION)]
+        session: String,
+        /// Max depth to scan
+        #[arg(long, default_value = "1")]
+        depth: usize,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -161,6 +176,7 @@ fn main() -> anyhow::Result<()> {
         Cmd::Backlog { window } => backlog::f112(window.as_deref()),
         Cmd::Clear { window } => backlog::f113(&window),
         Cmd::Drain { window, session, interval } => backlog::f114(&window, &session, interval),
+        Cmd::Scaffold { dir, output, session, depth } => scaffold::f120(&dir, &output, &session, depth),
     }
 }
 
@@ -186,10 +202,14 @@ fn capture_pane(session: &str, window: &str, lines: usize) -> anyhow::Result<Str
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// f4: Check if pane is idle (at prompt)
+/// f4: Check if pane is idle (at shell prompt or Claude Code empty prompt)
 fn is_idle(session: &str, window: &str) -> bool {
-    capture_pane(session, window, 6)
-        .map(|s| s.lines().rev().take(6).any(|l| l.contains("❯")))
+    capture_pane(session, window, 30)
+        .map(|s| {
+            // Strip trailing blank lines (Claude Code leaves empty terminal space below prompt)
+            let non_empty: Vec<&str> = s.lines().rev().skip_while(|l| l.trim().is_empty()).collect();
+            non_empty.iter().take(6).any(|l| l.contains("❯"))
+        })
         .unwrap_or(false)
 }
 
@@ -250,7 +270,7 @@ mod init {
         dir: String,
     }
 
-    fn expand_tilde(path: &str) -> String {
+    pub fn expand_tilde(path: &str) -> String {
         if let Some(rest) = path.strip_prefix("~/") {
             if let Some(home) = dirs::home_dir() {
                 return format!("{}/{}", home.display(), rest);
@@ -760,5 +780,71 @@ mod backlog {
             }
             f111(window, session)?;
         }
+    }
+}
+
+mod scaffold {
+    use super::init::expand_tilde;
+    use std::fs;
+    use std::path::Path;
+
+    /// f120: Scaffold fleet.toml by scanning for git repos
+    pub fn f120(dir: &str, output: &str, session: &str, depth: usize) -> anyhow::Result<()> {
+        let root = expand_tilde(dir);
+        let root = Path::new(&root);
+        if !root.is_dir() {
+            anyhow::bail!("not a directory: {}", root.display());
+        }
+
+        let mut panes: Vec<(String, String)> = Vec::new();
+        scan_git_repos(root, depth, 0, &mut panes)?;
+        // Deduplicate by name — keep shortest path (closest to home)
+        panes.sort_by(|a, b| a.1.len().cmp(&b.1.len()));
+        let mut seen = std::collections::HashSet::new();
+        panes.retain(|(name, _)| seen.insert(name.clone()));
+        panes.sort_by(|a, b| a.0.cmp(&b.0));
+
+        if panes.is_empty() {
+            eprintln!("no git repos found in {} (depth={})", root.display(), depth);
+            return Ok(());
+        }
+
+        let home = dirs::home_dir().unwrap_or_default();
+        let home_str = home.to_string_lossy();
+
+        let mut toml = format!("session = \"{}\"\n\n", session);
+        for (name, path) in &panes {
+            // Collapse home dir to ~
+            let short = if path.starts_with(home_str.as_ref()) {
+                format!("~{}", &path[home_str.len()..])
+            } else {
+                path.clone()
+            };
+            toml.push_str(&format!("[[pane]]\nname = \"{}\"\ndir = \"{}\"\n\n", name, short));
+        }
+
+        fs::write(output, &toml)?;
+        eprintln!("[scaffold] {} repos → {}", panes.len(), output);
+        for (name, _) in &panes {
+            eprintln!("  {}", name);
+        }
+        Ok(())
+    }
+
+    fn scan_git_repos(dir: &Path, max_depth: usize, current: usize, out: &mut Vec<(String, String)>) -> anyhow::Result<()> {
+        if current > max_depth { return Ok(()); }
+        let entries = fs::read_dir(dir)?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() { continue; }
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+            if name.starts_with('.') { continue; }
+            if path.join(".git").is_dir() {
+                out.push((name, path.to_string_lossy().to_string()));
+            } else if current < max_depth {
+                scan_git_repos(&path, max_depth, current + 1, out)?;
+            }
+        }
+        Ok(())
     }
 }
