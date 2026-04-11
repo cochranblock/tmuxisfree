@@ -489,6 +489,17 @@ mod peek {
         for line in &trimmed {
             println!("{}", line);
         }
+        // Detect stale chrome filter — repeated identical non-empty lines = unstripped noise
+        let mut counts = std::collections::HashMap::new();
+        for line in &trimmed {
+            let t = line.trim();
+            if !t.is_empty() {
+                *counts.entry(t).or_insert(0u32) += 1;
+            }
+        }
+        if let Some((line, n)) = counts.iter().find(|(_, n)| **n >= 3) {
+            eprintln!("[peek] WARNING: chrome filter may be stale — \"{}\" repeated {}x", &line[..line.len().min(40)], n);
+        }
         Ok(())
     }
 
