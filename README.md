@@ -65,11 +65,9 @@ tmuxisfree drain cochranblock  # auto-dispatch all, wait for idle between
 tmuxisfree clear cochranblock  # clear backlog
 ```
 
-## Fleet Config (planned)
+## Fleet Config
 
-`tmuxisfree init` is not yet implemented. Currently, create your tmux session and windows manually, then use dispatch/broadcast to control them.
-
-Planned config format (fleet.toml):
+Define your fleet in `fleet.toml`:
 
 ```toml
 session = "c2"
@@ -86,6 +84,14 @@ dir = "~/cochranblock"
 name = "kova"
 dir = "~/kova"
 ```
+
+Then spin it up:
+
+```bash
+tmuxisfree init -c fleet.toml
+```
+
+Creates the tmux session, one window per pane, `cd`s to each dir, and starts `claude` in every pane (2s stagger to avoid rate limits). Skips any pane whose directory doesn't exist.
 
 ## Architecture
 

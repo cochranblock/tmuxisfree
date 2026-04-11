@@ -235,9 +235,83 @@ fn pick_option(session: &str, window: &str) -> &'static str {
 }
 
 mod init {
-    /// f0: Initialize fleet from config
-    pub fn f0(_session: &str, _config: &str) -> anyhow::Result<()> {
-        println!("init: not yet implemented");
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct FleetConfig {
+        session: Option<String>,
+        pane: Vec<PaneConfig>,
+    }
+
+    #[derive(Deserialize)]
+    struct PaneConfig {
+        name: String,
+        dir: String,
+    }
+
+    fn expand_tilde(path: &str) -> String {
+        if let Some(rest) = path.strip_prefix("~/") {
+            if let Some(home) = dirs::home_dir() {
+                return format!("{}/{}", home.display(), rest);
+            }
+        }
+        path.to_string()
+    }
+
+    /// f0: Initialize fleet from config — parse fleet.toml, create session + windows, start claude
+    pub fn f0(session_arg: &str, config: &str) -> anyhow::Result<()> {
+        let content = std::fs::read_to_string(config)
+            .map_err(|e| anyhow::anyhow!("cannot read {}: {}", config, e))?;
+
+        let fleet: FleetConfig = toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("parse {}: {}", config, e))?;
+
+        let session = fleet.session.as_deref().unwrap_or(session_arg);
+
+        // Bail if session already exists
+        let check = Command::new("tmux")
+            .args(["has-session", "-t", session])
+            .stderr(std::process::Stdio::null())
+            .status()?;
+        if check.success() {
+            anyhow::bail!("session '{}' exists — kill first: tmux kill-session -t {}", session, session);
+        }
+
+        // Create session with window 0 as C2
+        Command::new("tmux")
+            .args(["new-session", "-d", "-s", session, "-n", "C2"])
+            .status()?;
+        eprintln!("[init] session '{}'", session);
+
+        let mut created = 0u16;
+        for pane in &fleet.pane {
+            let dir = expand_tilde(&pane.dir);
+
+            if !std::path::Path::new(&dir).is_dir() {
+                eprintln!("[init] SKIP {} — not found: {}", pane.name, dir);
+                continue;
+            }
+
+            Command::new("tmux")
+                .args(["new-window", "-t", session, "-n", &pane.name, "-c", &dir])
+                .status()?;
+
+            // Start claude in this pane
+            send_keys(session, &pane.name, "claude")?;
+            created += 1;
+            eprintln!("[init] w{} {} → {}", created, pane.name, dir);
+
+            // Stagger 2s to avoid rate limits on claude startup
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+
+        // Return to C2
+        let _ = Command::new("tmux")
+            .args(["select-window", "-t", &format!("{}:0", session)])
+            .status();
+
+        eprintln!("[init] fleet ready — {} panes", created);
         Ok(())
     }
 }

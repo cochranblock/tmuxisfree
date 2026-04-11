@@ -1,0 +1,65 @@
+session = "kova-c2"
+
+[[pane]]
+name = "pixel-forge"
+dir = "~/pixel-forge"
+
+[[pane]]
+name = "cochranblock"
+dir = "~/cochranblock"
+
+[[pane]]
+name = "oakilydokily"
+dir = "~/oakilydokily"
+
+[[pane]]
+name = "kova"
+dir = "~/kova"
+
+[[pane]]
+name = "rogue-repo"
+dir = "~/rogue-repo"
+
+[[pane]]
+name = "approuter"
+dir = "~/approuter"
+
+[[pane]]
+name = "ronin-sites"
+dir = "~/ronin-sites"
+
+[[pane]]
+name = "illbethejudgeofthat"
+dir = "~/dev/illbethejudgeofthat"
+
+[[pane]]
+name = "exopack"
+dir = "~/exopack"
+
+[[pane]]
+name = "whyyoulying"
+dir = "~/whyyoulying"
+
+[[pane]]
+name = "wowasticker"
+dir = "~/wowasticker"
+
+[[pane]]
+name = "call-shield"
+dir = "~/call-shield"
+
+[[pane]]
+name = "ghost-fabric"
+dir = "~/ghost-fabric"
+
+[[pane]]
+name = "pocket-server"
+dir = "~/pocket-server"
+
+[[pane]]
+name = "provenance-docs"
+dir = "~/provenance-docs"
+
+[[pane]]
+name = "aptnomo"
+dir = "~/dev/aptnomo"
