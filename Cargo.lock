@@ -133,7 +133,8 @@ dependencies = [
 
 [[package]]
 name = "exopack"
-version = "0.1.0"
+version = "0.2.0"
+source = "git+https://github.com/cochranblock/exopack#bddaf005ce9157b13df15c03009484e80338ec9b"
 
 [[package]]
 name = "getrandom"

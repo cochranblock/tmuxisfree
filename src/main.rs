@@ -207,22 +207,31 @@ fn is_rate_limited(session: &str, window: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// f7: Check if pane has permission prompt
-fn has_permission_prompt(session: &str, window: &str) -> bool {
-    capture_pane(session, window, 10)
-        .map(|s| s.contains("Do you want to proceed") || s.contains("Yes, and don't ask"))
+/// f7: Check if pane has any approval prompt (permission, plan, trust, allow)
+fn has_approval_prompt(session: &str, window: &str) -> bool {
+    capture_pane(session, window, 15)
+        .map(|s| {
+            s.contains("Do you want to proceed")
+                || s.contains("Would you like to proceed")
+                || s.contains("Yes, auto-accept")
+                || s.contains("Yes, and don")
+                || s.contains("Yes, allow")
+                || s.contains("Trust this folder")
+                || s.contains("Esc to cancel")
+        })
         .unwrap_or(false)
 }
 
-/// f8: Check if pane has plan approval prompt (needs '1' not just Enter)
-fn has_plan_prompt(session: &str, window: &str) -> bool {
-    capture_pane(session, window, 10)
-        .map(|s| {
-            s.contains("Would you like to proceed")
-                || s.contains("Yes, auto-accept edits")
-                || s.contains("Yes, and don")
-        })
-        .unwrap_or(false)
+/// f8: Detect which option to pick. Returns "1" for most prompts,
+/// "2" for "allow from this project" prompts (broader permission).
+fn pick_option(session: &str, window: &str) -> &'static str {
+    let text = capture_pane(session, window, 15).unwrap_or_default();
+    // If there's a "Yes, allow" option that grants project-wide access, pick that
+    if text.contains("2. Yes, allow") || text.contains("2. Yes, and don") {
+        "2"
+    } else {
+        "1"
+    }
 }
 
 mod init {
@@ -407,21 +416,19 @@ mod unblock {
                 if idx == "0" { continue; }
                 let now = Instant::now();
 
-                if has_plan_prompt(session, idx) {
+                if has_approval_prompt(session, idx) {
                     if let Some(last) = cooldowns.get(idx) {
                         if now.duration_since(*last).as_secs() < cooldown_secs {
-                            continue; // still cooling down
+                            continue;
                         }
                     }
+                    let option = pick_option(session, idx);
                     let target = format!("{}:{}", session, idx);
-                    let _ = Command::new("tmux").args(["send-keys", "-t", &target, "1"]).status();
-                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    let _ = Command::new("tmux").args(["send-keys", "-t", &target, option]).status();
+                    std::thread::sleep(std::time::Duration::from_millis(300));
                     let _ = Command::new("tmux").args(["send-keys", "-t", &target, "Enter"]).status();
                     cooldowns.insert(idx.to_string(), now);
-                    eprintln!("[w{}] approved plan prompt (cooldown 30s)", idx);
-                } else if has_permission_prompt(session, idx) {
-                    send_keys(session, idx, "")?;
-                    eprintln!("[w{}] unblocked permission", idx);
+                    eprintln!("[w{}] approved (option {}, cooldown {}s)", idx, option, cooldown_secs);
                 }
                 if is_rate_limited(session, idx) {
                     if let Some(last) = cooldowns.get(&format!("rl_{}", idx)) {
