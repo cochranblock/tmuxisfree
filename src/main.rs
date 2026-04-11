@@ -475,11 +475,38 @@ mod status {
 
 mod peek {
     use super::*;
-    /// f50: Peek at pane
+    /// f50: Peek at pane — strips Claude Code chrome and tmux noise
     pub fn f50(session: &str, window: &str, lines: usize) -> anyhow::Result<()> {
         let content = capture_pane(session, window, lines)?;
-        print!("{}", content);
+        let cleaned: Vec<&str> = content
+            .lines()
+            .filter(|l| !is_chrome(l))
+            .collect();
+        // Strip trailing blank lines
+        let trimmed: Vec<&str> = cleaned.into_iter().rev()
+            .skip_while(|l| l.trim().is_empty())
+            .collect::<Vec<_>>().into_iter().rev().collect();
+        for line in &trimmed {
+            println!("{}", line);
+        }
         Ok(())
+    }
+
+    /// Lines that are Claude Code banner/chrome or tmux noise
+    fn is_chrome(line: &str) -> bool {
+        let t = line.trim();
+        if t.is_empty() { return false; } // keep blanks between real content
+        // Box-drawing separator lines (────...)
+        if t.chars().all(|c| c == '─' || c == '━') { return true; }
+        // Claude Code banner art
+        if t.contains('▐') || t.contains('▛') || t.contains('▜') || t.contains('▝') || t.contains('▘') { return true; }
+        // Claude Code version + model line
+        if t.contains("Claude Code v") { return true; }
+        if t.contains("context") && (t.contains("Opus") || t.contains("Sonnet") || t.contains("Haiku")) { return true; }
+        // Hints
+        if t == "? for shortcuts" { return true; }
+        if t.starts_with("Tip:") { return true; }
+        false
     }
 }
 
