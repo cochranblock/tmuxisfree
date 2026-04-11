@@ -396,18 +396,29 @@ mod unblock {
         use std::collections::HashMap;
         use std::time::Instant;
 
-        // Kill any existing unblock daemon before starting
+        // Gemini Man: write PID to lockfile, kill old instance via lockfile, take over
+        let lockfile = dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+            .join(".kova")
+            .join("unblock.pid");
         let my_pid = std::process::id();
-        if let Ok(out) = Command::new("pgrep").args(["-f", "tmuxisfree unblock"]).output() {
-            for line in String::from_utf8_lossy(&out.stdout).lines() {
-                if let Ok(pid) = line.trim().parse::<u32>() {
-                    if pid != my_pid {
-                        let _ = Command::new("kill").arg(pid.to_string()).status();
-                        eprintln!("[unblock] killed old instance pid={}", pid);
-                    }
+
+        // Kill old instance from lockfile (not pgrep — avoids matching ourselves)
+        if let Ok(old_pid_str) = std::fs::read_to_string(&lockfile) {
+            if let Ok(old_pid) = old_pid_str.trim().parse::<u32>() {
+                if old_pid != my_pid {
+                    let _ = Command::new("kill").arg(old_pid.to_string()).status();
+                    eprintln!("[unblock] killed old instance pid={}", old_pid);
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                 }
             }
         }
+
+        // Write our PID
+        if let Some(parent) = lockfile.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&lockfile, my_pid.to_string());
         eprintln!("unblock daemon running ({}s interval, pid={})", interval, my_pid);
 
         // Cooldown: don't re-approve same window within 30s
