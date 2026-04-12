@@ -405,7 +405,19 @@ mod broadcast {
 
 mod sponge {
     use super::*;
-    /// f30: Sponge mesh — circuit breaker + exponential backoff
+
+    /// Jittered sleep: base_ms ± 50%
+    fn jittered_sleep(base_ms: u64) {
+        let jitter = (base_ms / 2) as i64;
+        let offset = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos() as i64 % (jitter * 2 + 1)) - jitter;
+        let ms = (base_ms as i64 + offset).max(500) as u64;
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+
+    /// f30: Sponge mesh — circuit breaker + exponential backoff + jitter
     pub fn f30(session: &str, message: &str) -> anyhow::Result<()> {
         let windows = tmux(&["list-windows", "-t", session, "-F", "#{window_index}:#{window_name}"])?;
         let panes: Vec<String> = windows.lines()
@@ -431,7 +443,7 @@ mod sponge {
                 continue;
             }
             send_keys(session, idx, message)?;
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            jittered_sleep(3000);
 
             if is_rate_limited(session, idx) {
                 consecutive_fails += 1;
@@ -459,9 +471,9 @@ mod sponge {
         // Retry passes — exponential backoff (30s, 60s, 120s, 240s, 480s)
         for retry in 0..5u32 {
             if pending.is_empty() { break; }
-            let backoff = std::time::Duration::from_secs(30 * 2u64.pow(retry));
-            eprintln!("retry {} — waiting {:?} before trying {} panes...", retry + 1, backoff, pending.len());
-            std::thread::sleep(backoff);
+            let base_ms = 30_000 * 2u64.pow(retry);
+            eprintln!("retry {} — backoff ~{}s before trying {} panes...", retry + 1, base_ms / 1000, pending.len());
+            jittered_sleep(base_ms);
 
             // Trickle: one pane at a time with stagger, stop on consecutive fails
             consecutive_fails = 0;
@@ -481,7 +493,7 @@ mod sponge {
                     continue;
                 }
                 send_keys(session, idx, message)?;
-                std::thread::sleep(std::time::Duration::from_secs(5));
+                jittered_sleep(5000);
 
                 if is_rate_limited(session, idx) {
                     consecutive_fails += 1;
