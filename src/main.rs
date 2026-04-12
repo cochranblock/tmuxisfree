@@ -405,51 +405,105 @@ mod broadcast {
 
 mod sponge {
     use super::*;
-    /// f30: Sponge mesh — skip rate limited, retry later
+    /// f30: Sponge mesh — circuit breaker + exponential backoff
     pub fn f30(session: &str, message: &str) -> anyhow::Result<()> {
         let windows = tmux(&["list-windows", "-t", session, "-F", "#{window_index}:#{window_name}"])?;
-        let mut failed: Vec<String> = Vec::new();
+        let panes: Vec<String> = windows.lines()
+            .filter_map(|l| {
+                let idx = l.split(':').next().unwrap_or("0").to_string();
+                if idx == "0" || l.contains("unblock") { None } else { Some(idx) }
+            })
+            .collect();
 
-        // First pass
-        for line in windows.lines() {
-            let idx = line.split(':').next().unwrap_or("0").to_string();
-            if idx == "0" || line.contains("unblock") { continue; }
-            send_keys(session, &idx, message)?;
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            if is_rate_limited(session, &idx) {
-                eprintln!("[w{}] rate limited — will retry", idx);
-                failed.push(idx);
+        let mut pending = panes.clone();
+        let mut sent: Vec<String> = Vec::new();
+        let mut consecutive_fails = 0u32;
+
+        // First pass — circuit breaker: 3 consecutive rate limits = account-wide, stop
+        for idx in &panes {
+            if consecutive_fails >= 3 {
+                eprintln!("[circuit breaker] account-wide rate limit detected — pausing first pass");
+                break;
+            }
+            // Only send to idle panes — don't dump text into active/rate-limited Claude
+            if !is_idle(session, idx) && !is_rate_limited(session, idx) {
+                eprintln!("[w{}] busy — skipping", idx);
+                continue;
+            }
+            send_keys(session, idx, message)?;
+            std::thread::sleep(std::time::Duration::from_secs(3));
+
+            if is_rate_limited(session, idx) {
+                consecutive_fails += 1;
+                eprintln!("[w{}] rate limited ({} consecutive)", idx, consecutive_fails);
             } else {
-                if has_pasted_text(session, &idx) {
-                    send_keys(session, &idx, "")?;
+                if has_pasted_text(session, idx) {
+                    send_keys(session, idx, "")?;
                 }
-                eprintln!("[w{}] sent", idx);
+                consecutive_fails = 0;
+                sent.push(idx.clone());
+                eprintln!("[w{}] accepted", idx);
             }
         }
 
-        // Retry pass
-        for retry in 1..=5 {
-            if failed.is_empty() { break; }
-            let backoff = std::time::Duration::from_secs(10 * retry);
-            eprintln!("retrying {} failed panes in {:?}...", failed.len(), backoff);
-            std::thread::sleep(backoff);
+        // Build pending list: everything not sent
+        pending.retain(|idx| !sent.contains(idx));
 
-            failed.retain(|idx| {
-                send_keys(session, idx, "").ok();
-                std::thread::sleep(std::time::Duration::from_secs(3));
-                if is_rate_limited(session, idx) {
-                    true
-                } else {
-                    eprintln!("[w{}] recovered on retry {}", idx, retry);
-                    false
-                }
-            });
+        if pending.is_empty() {
+            eprintln!("sponge complete — all {} panes accepted", sent.len());
+            return Ok(());
         }
 
-        if failed.is_empty() {
-            eprintln!("sponge broadcast complete — all panes accepted");
+        eprintln!("{} sent, {} pending — entering retry with exponential backoff", sent.len(), pending.len());
+
+        // Retry passes — exponential backoff (30s, 60s, 120s, 240s, 480s)
+        for retry in 0..5u32 {
+            if pending.is_empty() { break; }
+            let backoff = std::time::Duration::from_secs(30 * 2u64.pow(retry));
+            eprintln!("retry {} — waiting {:?} before trying {} panes...", retry + 1, backoff, pending.len());
+            std::thread::sleep(backoff);
+
+            // Trickle: one pane at a time with stagger, stop on consecutive fails
+            consecutive_fails = 0;
+            let mut newly_sent = Vec::new();
+            for idx in &pending {
+                if consecutive_fails >= 2 {
+                    eprintln!("[circuit breaker] still rate limited — aborting retry {}", retry + 1);
+                    break;
+                }
+                // Check if rate limit cleared before sending
+                if is_rate_limited(session, idx) {
+                    consecutive_fails += 1;
+                    continue;
+                }
+                if !is_idle(session, idx) {
+                    eprintln!("[w{}] busy — skip", idx);
+                    continue;
+                }
+                send_keys(session, idx, message)?;
+                std::thread::sleep(std::time::Duration::from_secs(5));
+
+                if is_rate_limited(session, idx) {
+                    consecutive_fails += 1;
+                    eprintln!("[w{}] still limited", idx);
+                } else {
+                    if has_pasted_text(session, idx) {
+                        send_keys(session, idx, "")?;
+                    }
+                    consecutive_fails = 0;
+                    newly_sent.push(idx.clone());
+                    eprintln!("[w{}] accepted on retry {}", idx, retry + 1);
+                }
+            }
+            pending.retain(|idx| !newly_sent.contains(idx));
+            sent.extend(newly_sent);
+        }
+
+        if pending.is_empty() {
+            eprintln!("sponge complete — all {} panes accepted", sent.len());
         } else {
-            eprintln!("WARNING: {} panes still rate limited: {:?}", failed.len(), failed);
+            eprintln!("sponge done — {}/{} accepted, {} still pending: {:?}",
+                sent.len(), sent.len() + pending.len(), pending.len(), pending);
         }
         Ok(())
     }
