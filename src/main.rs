@@ -7,7 +7,7 @@
 use clap::Parser;
 use std::process::Command;
 
-const DEFAULT_SESSION: &str = "c2";
+const DEFAULT_SESSION: &str = "kova-c2";
 
 #[derive(Parser)]
 #[command(name = "tmuxisfree", about = "AI fleet orchestration via tmux. LangChain is dead.")]
@@ -395,6 +395,10 @@ mod broadcast {
             let idx = line.split(':').next().unwrap_or("0");
             if idx == "0" { continue; } // skip dispatcher
             if line.contains("unblock") { continue; }
+            if !is_idle(session, idx) {
+                eprintln!("[w{}] busy — skip", idx);
+                continue;
+            }
             dispatch::f10(session, idx, message)?;
             std::thread::sleep(std::time::Duration::from_secs(stagger));
         }
